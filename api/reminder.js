@@ -162,33 +162,44 @@ export default async function handler(req, res) {
 
     const isMorning = getISTHour() < 13;
     const staffList = ['Mahendra', 'Pintu', 'Saurabh', 'Amin Master', 'Self'];
+    const timeLabel = isMorning ? 'MORNING' : 'AFTERNOON';
 
-    // Build personal messages block
-    let personalBlock = isMorning
-      ? `\uD83C\uDF05 <b>VIBRANT OPS \u2014 MORNING SUMMARY</b>\n`
-      : `\u2615 <b>VIBRANT OPS \u2014 AFTERNOON SUMMARY</b>\n`;
-    personalBlock += `\uD83D\uDD50 ${getISTTimeStr()} IST \u2014 ${getISTDateStr()}\n`;
-    personalBlock += `\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n`;
-    personalBlock += `<b>\uD83D\uDCCB PERSONAL MESSAGES</b>\n<i>(copy &amp; paste to each person on WhatsApp)</i>\n\n`;
+    // Header message
+    const header = (isMorning ? '🌅' : '☕') +
+      ` <b>VIBRANT OPS — ${timeLabel} SUMMARY</b>
+` +
+      `🕐 ${getISTTimeStr()} IST — ${getISTDateStr()}
+` +
+      `━━━━━━━━━━━━━━
+` +
+      `${tasks.length} open task${tasks.length !== 1 ? 's' : ''} total`;
+    await sendTelegram(header);
+    await new Promise(r => setTimeout(r, 400));
 
-    let hasPersonal = false;
+    // One message per staff member
+    let sentCount = 0;
     for (const name of staffList) {
       const myTasks = tasks.filter(t => t.assign === name);
       const msg = personalMsg(name, myTasks, isMorning);
       if (msg) {
-        personalBlock += `\uD83D\uDC64 <b>${name}</b>\n${msg}\n\n\u2796\u2796\u2796\u2796\u2796\u2796\u2796\n\n`;
-        hasPersonal = true;
+        await sendTelegram(msg);
+        await new Promise(r => setTimeout(r, 400));
+        sentCount++;
       }
     }
-    if (!hasPersonal) personalBlock += 'No pending tasks for any staff member today \u2705\n\n';
+    if (sentCount === 0) {
+      await sendTelegram('✅ No pending tasks for any staff member today');
+      await new Promise(r => setTimeout(r, 400));
+    }
 
-    // Build group message block
-    let groupBlock = `<b>\uD83D\uDC65 GROUP MESSAGE</b>\n<i>(copy &amp; paste to your WhatsApp team group)</i>\n\n`;
-    groupBlock += groupMsg(tasks, isMorning);
+    // Group message
+    const groupBlock =
+      '<b>👥 GROUP MESSAGE</b>
+' +
+      '<i>(copy &amp; paste to your WhatsApp team group)</i>
 
-    // Send both messages to Telegram
-    await sendTelegram(personalBlock);
-    await new Promise(r => setTimeout(r, 500));
+' +
+      groupMsg(tasks, isMorning);
     await sendTelegram(groupBlock);
 
     res.status(200).json({ ok: true, tasks: tasks.length, time: getISTTimeStr() });
