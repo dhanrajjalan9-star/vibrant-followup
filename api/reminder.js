@@ -3,60 +3,56 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 const TELEGRAM_TOKEN = '8644673879:AAHXm57E8MXspMXuGuZYRGNBq18WIWb1Z2Y';
 const TELEGRAM_CHAT_ID = '1645408902';
 const DASHBOARD_URL = 'https://vibrant-followup.netlify.app';
+const STAFF_LIST = ['Mahendra', 'Pintu', 'Saurabh', 'Amin Master', 'Self'];
 
-function getISTDate(offsetDays = 0) {
-  const now = new Date();
-  const ist = new Date(now.getTime() + 5.5 * 60 * 60 * 1000);
-  ist.setDate(ist.getDate() + offsetDays);
-  return ist.toISOString().split('T')[0];
+function getIST(offsetDays) {
+  const ist = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+  if (offsetDays) ist.setDate(ist.getDate() + offsetDays);
+  return ist;
 }
-
-function getISTHour() {
-  const now = new Date();
-  const ist = new Date(now.getTime() + 5.5 * 60 * 60 * 1000);
-  return ist.getHours();
+function istDateStr(offsetDays) {
+  return getIST(offsetDays || 0).toISOString().split('T')[0];
 }
-
-function getISTTimeStr() {
-  const now = new Date();
-  const ist = new Date(now.getTime() + 5.5 * 60 * 60 * 1000);
-  return ist.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+function istHour() {
+  return getIST(0).getHours();
 }
-
-function getISTDateStr() {
-  const now = new Date();
-  const ist = new Date(now.getTime() + 5.5 * 60 * 60 * 1000);
-  return ist.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+function istTimeLabel() {
+  return getIST(0).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+}
+function istDayLabel() {
+  return getIST(0).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
 }
 
 async function fetchTasks() {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/tasks?done=eq.false&select=*`, {
+  const res = await fetch(SUPABASE_URL + '/rest/v1/tasks?done=eq.false&select=*', {
     headers: {
       apikey: SUPABASE_KEY,
-      Authorization: `Bearer ${SUPABASE_KEY}`,
-      'Content-Type': 'application/json'
+      Authorization: 'Bearer ' + SUPABASE_KEY
     }
   });
   return res.json();
 }
 
 async function sendTelegram(text) {
-  const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+  await fetch('https://api.telegram.org/bot' + TELEGRAM_TOKEN + '/sendMessage', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       chat_id: TELEGRAM_CHAT_ID,
-      text: text.length > 4096 ? text.substring(0, 4090) + '...' : text,
+      text: text.length > 4000 ? text.slice(0, 3990) + '...' : text,
       parse_mode: 'HTML',
       disable_web_page_preview: true
     })
   });
-  return res.json();
 }
 
-function personalMsg(name, tasks, isMorning) {
-  const today    = getISTDate(0);
-  const tomorrow = getISTDate(1);
+function delay(ms) {
+  return new Promise(r => setTimeout(r, ms));
+}
+
+function buildPersonalMsg(name, tasks, isMorning) {
+  const today    = istDateStr(0);
+  const tomorrow = istDateStr(1);
   const overdue  = tasks.filter(t => t.deadline && t.deadline < today);
   const dueToday = tasks.filter(t => t.deadline === today);
   const dueTmrw  = tasks.filter(t => t.deadline === tomorrow);
@@ -64,148 +60,145 @@ function personalMsg(name, tasks, isMorning) {
 
   if (tasks.length === 0) return null;
 
-  let m = isMorning
-    ? `Good morning ${name} \uD83D\uDC4B\n\n`
-    : `Afternoon check-in ${name} \u23F0\n\n`;
+  const lines = [];
+  lines.push(isMorning ? 'Good morning ' + name + ' \uD83D\uDC4B' : 'Afternoon check-in ' + name + ' \u23F0');
+  lines.push('');
 
   if (overdue.length) {
-    m += `\uD83D\uDD34 <b>Overdue:</b>\n`;
+    lines.push('\uD83D\uDD34 <b>Overdue:</b>');
     overdue.forEach(t => {
       const days = Math.floor((Date.now() - new Date(t.deadline).getTime()) / 86400000);
-      m += `  \u2022 ${t.title} (${days}d late)\n`;
+      lines.push('  \u2022 ' + t.title + ' (' + days + 'd late)');
     });
-    m += '\n';
+    lines.push('');
   }
   if (dueToday.length) {
-    m += `\uD83D\uDFE1 <b>Due today:</b>\n`;
-    dueToday.forEach(t => { m += `  \u2022 ${t.title}\n`; });
-    m += '\n';
+    lines.push('\uD83D\uDFE1 <b>Due today:</b>');
+    dueToday.forEach(t => lines.push('  \u2022 ' + t.title));
+    lines.push('');
   }
   if (isMorning && dueTmrw.length) {
-    m += `\uD83D\uDCC5 <b>Due tomorrow:</b>\n`;
-    dueTmrw.forEach(t => { m += `  \u2022 ${t.title}\n`; });
-    m += '\n';
+    lines.push('\uD83D\uDCC5 <b>Due tomorrow:</b>');
+    dueTmrw.forEach(t => lines.push('  \u2022 ' + t.title));
+    lines.push('');
   }
   if (other.length) {
-    m += `\uD83D\uDCCB <b>Other pending:</b>\n`;
-    other.slice(0, 3).forEach(t => { m += `  \u2022 ${t.title}\n`; });
-    if (other.length > 3) m += `  ...and ${other.length - 3} more\n`;
-    m += '\n';
+    lines.push('\uD83D\uDCCB <b>Other pending:</b>');
+    other.slice(0, 3).forEach(t => lines.push('  \u2022 ' + t.title));
+    if (other.length > 3) lines.push('  ...and ' + (other.length - 3) + ' more');
+    lines.push('');
   }
-  m += `\uD83D\uDC49 ${DASHBOARD_URL}`;
-  return m;
+  lines.push('\uD83D\uDC49 ' + DASHBOARD_URL);
+  return lines.join('\n');
 }
 
-function groupMsg(tasks, isMorning) {
-  const today    = getISTDate(0);
-  const tomorrow = getISTDate(1);
+function buildGroupMsg(tasks, isMorning) {
+  const today    = istDateStr(0);
+  const tomorrow = istDateStr(1);
   const overdue  = tasks.filter(t => t.deadline && t.deadline < today);
   const dueToday = tasks.filter(t => t.deadline === today);
   const dueTmrw  = tasks.filter(t => t.deadline === tomorrow);
-  const staff    = ['Mahendra', 'Pintu', 'Saurabh', 'Amin Master', 'Self'];
 
-  let m = isMorning
-    ? `\u2600\uFE0F <b>VIBRANT CLOTHING \u2014 MORNING BRIEF</b>\n`
-    : `\uD83D\uDD51 <b>VIBRANT CLOTHING \u2014 AFTERNOON BRIEF</b>\n`;
-  m += `\uD83D\uDCC6 ${getISTDateStr()} | ${getISTTimeStr()} IST\n`;
-  m += `\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n`;
+  const lines = [];
+  lines.push(isMorning
+    ? '\u2600\uFE0F <b>VIBRANT CLOTHING \u2014 MORNING BRIEF</b>'
+    : '\uD83D\uDD51 <b>VIBRANT CLOTHING \u2014 AFTERNOON BRIEF</b>');
+  lines.push('\uD83D\uDCC6 ' + istDayLabel() + ' | ' + istTimeLabel() + ' IST');
+  lines.push('\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501');
+  lines.push('');
 
-  m += `\uD83D\uDCCA ${tasks.length} open task${tasks.length !== 1 ? 's' : ''}`;
-  if (overdue.length)  m += ` \u2502 \uD83D\uDD34 ${overdue.length} overdue`;
-  if (dueToday.length) m += ` \u2502 \uD83D\uDFE1 ${dueToday.length} due today`;
-  m += '\n\n';
+  let snap = '\uD83D\uDCCA ' + tasks.length + ' open task' + (tasks.length !== 1 ? 's' : '');
+  if (overdue.length)  snap += ' \u2502 \uD83D\uDD34 ' + overdue.length + ' overdue';
+  if (dueToday.length) snap += ' \u2502 \uD83D\uDFE1 ' + dueToday.length + ' due today';
+  lines.push(snap);
+  lines.push('');
 
   if (dueToday.length) {
-    m += `\uD83D\uDCCC <b>Focus for today:</b>\n`;
-    dueToday.forEach(t => { m += `  \u2022 ${t.title}${t.assign ? ` \u2014 ${t.assign}` : ''}\n`; });
-    m += '\n';
+    lines.push('\uD83D\uDCCC <b>Focus for today:</b>');
+    dueToday.forEach(t => lines.push('  \u2022 ' + t.title + (t.assign ? ' \u2014 ' + t.assign : '')));
+    lines.push('');
   }
   if (overdue.length) {
-    m += `\uD83D\uDD34 <b>Needs urgent attention:</b>\n`;
+    lines.push('\uD83D\uDD34 <b>Needs urgent attention:</b>');
     overdue.forEach(t => {
       const days = Math.floor((Date.now() - new Date(t.deadline).getTime()) / 86400000);
-      m += `  \u2022 ${t.title}${t.assign ? ` \u2014 ${t.assign}` : ''} (${days}d late)\n`;
+      lines.push('  \u2022 ' + t.title + (t.assign ? ' \u2014 ' + t.assign : '') + ' (' + days + 'd late)');
     });
-    m += '\n';
+    lines.push('');
   }
   if (isMorning && dueTmrw.length) {
-    m += `\uD83D\uDCC5 <b>Due tomorrow:</b>\n`;
-    dueTmrw.forEach(t => { m += `  \u2022 ${t.title}${t.assign ? ` \u2014 ${t.assign}` : ''}\n`; });
-    m += '\n';
+    lines.push('\uD83D\uDCC5 <b>Due tomorrow:</b>');
+    dueTmrw.forEach(t => lines.push('  \u2022 ' + t.title + (t.assign ? ' \u2014 ' + t.assign : '')));
+    lines.push('');
   }
 
-  m += `\uD83D\uDC65 <b>Team load:</b>\n`;
-  staff.forEach(name => {
+  lines.push('\uD83D\uDC65 <b>Team load:</b>');
+  STAFF_LIST.forEach(name => {
     const mine = tasks.filter(t => t.assign === name);
     if (mine.length > 0) {
-      const myOverdue = mine.filter(t => t.deadline && t.deadline < today).length;
-      m += `  \u2022 ${name}: ${mine.length} task${mine.length > 1 ? 's' : ''}${myOverdue > 0 ? ' \uD83D\uDD34' : ''}\n`;
+      const hasOverdue = mine.some(t => t.deadline && t.deadline < today);
+      lines.push('  \u2022 ' + name + ': ' + mine.length + ' task' + (mine.length > 1 ? 's' : '') + (hasOverdue ? ' \uD83D\uDD34' : ''));
     }
   });
 
-  m += `\n\uD83D\uDC49 ${DASHBOARD_URL}`;
-  return m;
+  lines.push('');
+  lines.push('\uD83D\uDC49 ' + DASHBOARD_URL);
+  return lines.join('\n');
 }
 
 export default async function handler(req, res) {
   try {
     const rows = await fetchTasks();
-    if (!Array.isArray(rows)) throw new Error('Failed to fetch tasks from Supabase');
+    if (!Array.isArray(rows)) throw new Error('Supabase fetch failed: ' + JSON.stringify(rows));
 
     const tasks = rows.map(r => ({
-      title:    r.title,
+      title:    r.title || '',
       assign:   r.assign || '',
       deadline: r.deadline || '',
-      cat:      r.cat,
+      cat:      r.cat || '',
       priority: r.priority || 'medium'
     }));
 
-    const isMorning = getISTHour() < 13;
-    const staffList = ['Mahendra', 'Pintu', 'Saurabh', 'Amin Master', 'Self'];
-    const timeLabel = isMorning ? 'MORNING' : 'AFTERNOON';
+    const isMorning = istHour() < 13;
+    const sessionLabel = isMorning ? 'MORNING SUMMARY' : 'AFTERNOON SUMMARY';
 
-    // Header message
-    const header = (isMorning ? '🌅' : '☕') +
-      ` <b>VIBRANT OPS — ${timeLabel} SUMMARY</b>
-` +
-      `🕐 ${getISTTimeStr()} IST — ${getISTDateStr()}
-` +
-      `━━━━━━━━━━━━━━
-` +
-      `${tasks.length} open task${tasks.length !== 1 ? 's' : ''} total`;
-    await sendTelegram(header);
-    await new Promise(r => setTimeout(r, 400));
+    // 1. Header
+    const headerLines = [
+      (isMorning ? '\uD83C\uDF05' : '\u2615') + ' <b>VIBRANT OPS \u2014 ' + sessionLabel + '</b>',
+      '\uD83D\uDD50 ' + istTimeLabel() + ' IST \u2014 ' + istDayLabel(),
+      '\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501',
+      tasks.length + ' open task' + (tasks.length !== 1 ? 's' : '') + ' total'
+    ];
+    await sendTelegram(headerLines.join('\n'));
+    await delay(500);
 
-    // One message per staff member
-    let sentCount = 0;
-    for (const name of staffList) {
+    // 2. One message per staff member
+    let sent = 0;
+    for (const name of STAFF_LIST) {
       const myTasks = tasks.filter(t => t.assign === name);
-      const msg = personalMsg(name, myTasks, isMorning);
+      const msg = buildPersonalMsg(name, myTasks, isMorning);
       if (msg) {
         await sendTelegram(msg);
-        await new Promise(r => setTimeout(r, 400));
-        sentCount++;
+        await delay(500);
+        sent++;
       }
     }
-    if (sentCount === 0) {
-      await sendTelegram('✅ No pending tasks for any staff member today');
-      await new Promise(r => setTimeout(r, 400));
+    if (sent === 0) {
+      await sendTelegram('\u2705 No pending tasks for any staff member today');
+      await delay(500);
     }
 
-    // Group message
-    const groupBlock =
-      '<b>👥 GROUP MESSAGE</b>
-' +
-      '<i>(copy &amp; paste to your WhatsApp team group)</i>
+    // 3. Group message
+    const groupIntro = '<b>\uD83D\uDC65 GROUP MESSAGE</b>\n<i>(copy &amp; paste to your WhatsApp group)</i>\n\n';
+    await sendTelegram(groupIntro + buildGroupMsg(tasks, isMorning));
 
-' +
-      groupMsg(tasks, isMorning);
-    await sendTelegram(groupBlock);
+    res.status(200).json({ ok: true, tasks: tasks.length, staff_sent: sent });
 
-    res.status(200).json({ ok: true, tasks: tasks.length, time: getISTTimeStr() });
   } catch (err) {
-    console.error(err);
-    await sendTelegram(`\u26A0\uFE0F Vibrant reminder error:\n${err.message}`);
+    console.error('Reminder error:', err.message);
+    try {
+      await sendTelegram('\u26A0\uFE0F Reminder error: ' + err.message);
+    } catch (e) {}
     res.status(500).json({ ok: false, error: err.message });
   }
 }
